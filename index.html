@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Перетягивание каната</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Outfit', system-ui, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      background: #0f172a;
+      min-height: 100dvh;
+    }
+    .screen { display: none; min-height: 100dvh; flex-direction: column; }
+    .screen.active { display: flex; }
+    .glass {
+      background: rgba(255,255,255,0.95);
+      border-radius: 1.25rem;
+      box-shadow: 0 20px 50px rgba(15,23,42,0.35);
+      border: 1px solid rgba(255,255,255,0.7);
+    }
+    .mode-btn {
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .mode-btn:active { transform: scale(0.98); }
+    .progress-track {
+      position: relative; height: 10px; border-radius: 999px;
+      background: #334155; overflow: visible;
+    }
+    .progress-fill {
+      height: 100%; width: 50%; border-radius: 999px;
+      background: linear-gradient(90deg, #3b82f6, #f8fafc 50%, #ef4444);
+      transition: width 0.08s ease-out;
+    }
+    .progress-knob {
+      position: absolute; top: 50%; left: 50%;
+      width: 14px; height: 14px; border-radius: 50%;
+      background: #fff; border: 3px solid #fbbf24;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 0 10px rgba(251,191,36,0.85);
+      transition: left 0.08s ease-out;
+    }
+    .arena { position: relative; flex: 1; min-height: 220px; overflow: hidden; }
+    .sky {
+      position: absolute; inset: 0 0 34%;
+      background: linear-gradient(180deg, #ffd89b 0%, #7ec8e8 55%, #a8dce8 100%);
+    }
+    .sun {
+      position: absolute; top: 7%; right: 12%;
+      width: 48px; height: 48px; border-radius: 50%;
+      background: radial-gradient(circle, #fff7ae, #fbbf24 70%, #f59e0b);
+      box-shadow: 0 0 40px rgba(251,191,36,0.6);
+    }
+    .cloud {
+      position: absolute; background: #fff; border-radius: 50px; opacity: 0.9;
+    }
+    .c1 { width: 70px; height: 24px; top: 14%; left: 8%; }
+    .c2 { width: 90px; height: 28px; top: 22%; left: 40%; }
+    .c3 { width: 60px; height: 20px; top: 12%; right: 10%; }
+    .stands {
+      position: absolute; bottom: 28%; width: 36%; height: 34%; z-index: 2;
+    }
+    .stands-left { left: 0; }
+    .stands-right { right: 0; }
+    .stand-roof {
+      position: absolute; top: 0; left: 6%; right: 6%; height: 16%;
+      border-radius: 8px 8px 0 0;
+      background: linear-gradient(180deg, #fb923c, #ea580c);
+    }
+    .crowd {
+      position: absolute; bottom: 0; left: 0; right: 0; top: 16%;
+      background: repeating-linear-gradient(90deg,
+        #fde047 0, #fde047 10px, #f472b6 10px, #f472b6 20px,
+        #60a5fa 20px, #60a5fa 30px, #4ade80 30px, #4ade80 40px);
+      mask-image: linear-gradient(180deg, #000 55%, transparent);
+    }
+    .crowd-alt { filter: hue-rotate(35deg); }
+    .field {
+      position: absolute; bottom: 0; left: 0; right: 0; height: 30%;
+      background: linear-gradient(180deg, #5cb85c, #3d9a3d);
+    }
+    .game-layer {
+      position: absolute; bottom: 6%; left: 0; right: 0; height: 58%;
+      display: flex; align-items: flex-end; justify-content: center; z-index: 5;
+      pointer-events: none;
+    }
+    .tug-scene {
+      width: min(900px, 100%);
+      transition: transform 0.1s ease-out;
+      filter: drop-shadow(0 10px 20px rgba(0,0,0,0.22));
+    }
+    .characters-svg { width: 100%; height: auto; display: block; }
+    .arena.shake { animation: shake 0.12s ease; }
+    @keyframes shake {
+      25% { transform: translateX(-3px); }
+      75% { transform: translateX(3px); }
+    }
+    .tap-zone {
+      padding: 1.1rem; border: none; cursor: pointer; z-index: 20;
+      margin: 0.5rem 0.75rem 1rem;
+      border-radius: 1rem; font-family: inherit; font-weight: 900;
+      font-size: 1.2rem; letter-spacing: 0.04em;
+      background: linear-gradient(180deg, #fcd34d, #f59e0b);
+      color: #78350f;
+      box-shadow: 0 6px 0 #b45309, 0 12px 24px rgba(0,0,0,0.2);
+    }
+    .tap-zone:disabled { opacity: 0.45; cursor: not-allowed; }
+    .tap-zone.punch { animation: punch 0.14s ease; }
+    @keyframes punch { 50% { transform: scale(0.97); } }
+    .overlay {
+      position: fixed; inset: 0; z-index: 200;
+      display: flex; align-items: center; justify-content: center;
+      padding: 1rem; background: rgba(15,23,42,0.75); backdrop-filter: blur(6px);
+    }
+    .overlay.hidden { display: none; }
+    .code-display {
+      font-size: 2.5rem; font-weight: 900; letter-spacing: 0.35em;
+      color: #2563eb; font-variant-numeric: tabular-nums;
+    }
+    .err { color: #dc2626; font-size: 0.85rem; font-weight: 600; min-height: 1.25rem; }
+  </style>
+</head>
+<body>
+
+  <!-- Главное меню -->
+  <section id="screen-menu" class="screen active items-center justify-center p-4">
+    <div class="glass w-full max-w-md p-8 text-center">
+      <h1 class="text-3xl font-black bg-gradient-to-r from-blue-600 to-red-500 bg-clip-text text-transparent">
+        Перетягивание каната
+      </h1>
+      <p class="text-slate-600 mt-2 text-sm leading-relaxed">
+        Опереди соперника на <strong>50</strong> кликов. Кликай по кнопке или жми <strong>Пробел</strong>.
+      </p>
+      <div class="mt-8 flex flex-col gap-3">
+        <button type="button" id="btn-solo" class="mode-btn w-full py-4 rounded-xl font-bold text-white bg-gradient-to-r from-orange-400 to-orange-600 shadow-lg">
+          Одиночный режим
+        </button>
+        <button type="button" id="btn-friend" class="mode-btn w-full py-4 rounded-xl font-bold text-white bg-gradient-to-r from-blue-500 to-blue-700 shadow-lg">
+          С другом по коду
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- С другом: создать / войти -->
+  <section id="screen-friend" class="screen items-center justify-center p-4">
+    <div class="glass w-full max-w-md p-8">
+      <button type="button" id="btn-friend-back" class="text-sm text-slate-500 font-semibold mb-4">← Назад</button>
+      <h2 class="text-xl font-black text-slate-800">Игра с другом</h2>
+      <p class="text-slate-600 text-sm mt-1">Создай комнату или введи код с другого устройства.</p>
+
+      <div class="mt-6 p-4 rounded-xl bg-blue-50 border border-blue-100">
+        <p class="text-xs font-bold text-blue-800 uppercase">Создать комнату</p>
+        <button type="button" id="btn-create-room" class="mt-2 w-full py-3 rounded-lg font-bold text-white bg-blue-600">
+          Получить код комнаты
+        </button>
+      </div>
+
+      <div class="mt-4 p-4 rounded-xl bg-red-50 border border-red-100">
+        <p class="text-xs font-bold text-red-800 uppercase">Войти в комнату</p>
+        <div class="mt-2 flex gap-2">
+          <input id="join-code" type="text" maxlength="8" placeholder="Код" autocomplete="off"
+            class="flex-1 px-3 py-2 rounded-lg border-2 border-red-200 font-bold uppercase tracking-widest text-center" />
+          <button type="button" id="btn-join-room" class="px-4 py-2 rounded-lg font-bold text-white bg-red-500">Войти</button>
+        </div>
+      </div>
+      <p id="friend-error" class="err mt-4 text-center"></p>
+    </div>
+  </section>
+
+  <!-- Лобби хоста -->
+  <section id="screen-lobby" class="screen items-center justify-center p-4">
+    <div class="glass w-full max-w-md p-8 text-center">
+      <p class="text-sm font-semibold text-slate-500 uppercase tracking-wide">Код комнаты</p>
+      <p id="room-code" class="code-display mt-2">--------</p>
+      <p class="text-slate-600 text-sm mt-4">Друг вводит этот код на своём устройстве. Игра начнётся автоматически, когда он подключится.</p>
+      <p id="lobby-status" class="mt-4 font-bold text-amber-600">Ожидание второго игрока…</p>
+      <button type="button" id="btn-lobby-cancel" class="mt-6 text-slate-500 font-semibold text-sm">Отмена</button>
+    </div>
+  </section>
+
+  <!-- Игра -->
+  <section id="screen-game" class="screen">
+    <header class="px-3 py-3 bg-slate-900/90 backdrop-blur-md border-b border-white/10">
+      <div class="max-w-3xl mx-auto grid grid-cols-[1fr_auto_1fr] gap-2 items-center">
+        <div class="text-center">
+          <p id="label-p1" class="text-[10px] font-bold uppercase text-blue-300">Синий</p>
+          <p id="score-p1" class="text-3xl font-black text-white tabular-nums">0</p>
+        </div>
+        <div class="text-center min-w-[140px]">
+          <p id="hud-status" class="text-xs font-bold text-amber-300 mb-1">Старт!</p>
+          <div class="progress-track">
+            <div id="rope-bar" class="progress-fill"></div>
+            <div id="rope-marker" class="progress-knob"></div>
+          </div>
+          <p class="text-[10px] text-slate-400 mt-1">до победы: <strong id="clicks-to-win" class="text-white">50</strong></p>
+        </div>
+        <div class="text-center">
+          <p id="label-p2" class="text-[10px] font-bold uppercase text-red-300">Красный</p>
+          <p id="score-p2" class="text-3xl font-black text-white tabular-nums">0</p>
+        </div>
+      </div>
+    </header>
+
+    <div class="flex-1 flex flex-col">
+      <div id="arena" class="arena">
+        <div class="sky"></div>
+        <div class="sun"></div>
+        <div class="cloud c1"></div>
+        <div class="cloud c2"></div>
+        <div class="cloud c3"></div>
+        <div class="stands stands-left"><div class="stand-roof"></div><div class="crowd"></div></div>
+        <div class="stands stands-right"><div class="stand-roof"></div><div class="crowd crowd-alt"></div></div>
+        <div class="field"></div>
+        <div class="game-layer">
+          <div id="tug-scene" class="tug-scene">
+            <svg class="characters-svg" viewBox="0 0 900 320" aria-hidden="true">
+              <defs>
+                <linearGradient id="skin" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#ffe4c4"/><stop offset="100%" stop-color="#f5c99a"/>
+                </linearGradient>
+                <linearGradient id="ropeGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#c9a86c"/><stop offset="100%" stop-color="#8b6b3a"/>
+                </linearGradient>
+              </defs>
+              <g id="char-left">
+                <ellipse cx="120" cy="280" rx="55" ry="12" fill="rgba(0,0,0,0.15)"/>
+                <path d="M70 200 L95 240 L130 235 L155 200 L140 170 L100 165 Z" fill="#3b82f6"/>
+                <path d="M85 235 L75 270 L95 275 L105 240 Z" fill="#f97316"/>
+                <path d="M115 235 L125 275 L145 270 L135 240 Z" fill="#f97316"/>
+                <circle cx="115" cy="130" r="42" fill="url(#skin)"/>
+                <path d="M75 115 Q115 75 155 115 L150 125 Q115 95 80 125 Z" fill="#1e293b"/>
+                <ellipse cx="100" cy="128" rx="8" ry="10" fill="#fff"/>
+                <ellipse cx="130" cy="128" rx="8" ry="10" fill="#fff"/>
+                <circle cx="102" cy="130" r="4" fill="#1e293b"/>
+                <circle cx="132" cy="130" r="4" fill="#1e293b"/>
+                <path d="M88 95 L142 95 L138 88 L92 88 Z" fill="#fff" stroke="#3b82f6" stroke-width="2"/>
+                <ellipse cx="145" cy="200" rx="18" ry="22" fill="url(#skin)"/>
+                <ellipse cx="85" cy="200" rx="18" ry="22" fill="url(#skin)"/>
+              </g>
+              <g>
+                <rect x="180" y="195" width="540" height="22" rx="6" fill="url(#ropeGrad)"/>
+                <rect x="438" y="188" width="24" height="36" rx="4" fill="#dc2626"/>
+              </g>
+              <g>
+                <ellipse cx="780" cy="280" rx="55" ry="12" fill="rgba(0,0,0,0.15)"/>
+                <path d="M730 200 L755 240 L790 235 L815 200 L800 170 L760 165 Z" fill="#ef4444"/>
+                <path d="M745 235 L735 270 L755 275 L765 240 Z" fill="#f8fafc"/>
+                <path d="M775 235 L785 275 L805 270 L795 240 Z" fill="#f8fafc"/>
+                <circle cx="785" cy="130" r="42" fill="url(#skin)"/>
+                <path d="M745 115 Q785 75 825 115 L820 125 Q785 95 750 125 Z" fill="#1e293b"/>
+                <ellipse cx="770" cy="128" rx="8" ry="10" fill="#fff"/>
+                <ellipse cx="800" cy="128" rx="8" ry="10" fill="#fff"/>
+                <path d="M758 95 L812 95 L808 88 L762 88 Z" fill="#fff" stroke="#ef4444" stroke-width="2"/>
+                <ellipse cx="815" cy="200" rx="18" ry="22" fill="url(#skin)"/>
+                <ellipse cx="755" cy="200" rx="18" ry="22" fill="url(#skin)"/>
+              </g>
+            </svg>
+          </div>
+        </div>
+      </div>
+      <button type="button" id="tap-zone" disabled class="tap-zone">ЖМИ СЮДА!</button>
+      <div class="text-center pb-3">
+        <button type="button" id="btn-quit" class="text-slate-400 text-sm font-semibold">В главное меню</button>
+      </div>
+    </div>
+  </section>
+
+  <div id="overlay-countdown" class="overlay hidden">
+    <div class="glass p-10 text-center">
+      <p id="countdown-text" class="text-6xl font-black text-blue-600">3</p>
+    </div>
+  </div>
+
+  <div id="overlay-result" class="overlay hidden">
+    <div class="glass p-8 text-center max-w-sm w-full">
+      <h2 id="result-title" class="text-2xl font-black">Победа!</h2>
+      <p id="result-text" class="text-slate-600 mt-2 text-sm"></p>
+      <button type="button" id="btn-again" class="mt-6 w-full py-3 rounded-xl font-bold text-white bg-blue-600">Играть снова</button>
+    </div>
+  </div>
+
+<script>
+(function () {
+  const WIN = 50;
+  const ROPE_PX = 120;
+
+  const $ = (id) => document.getElementById(id);
+  const screens = {
+    menu: $('screen-menu'),
+    friend: $('screen-friend'),
+    lobby: $('screen-lobby'),
+    game: $('screen-game'),
+  };
+
+  let mode = null; // 'solo' | 'online'
+  let role = null; // 'host' | 'guest' | 'solo'
+  let myPlayer = 1; // 1 blue, 2 red
+  let clicks = { 1: 0, 2: 0 };
+  let playing = false;
+  let cpuTimer = null;
+  let peer = null;
+  let conn = null;
+  let roomCode = '';
+
+  function show(name) {
+    Object.values(screens).forEach((s) => s.classList.remove('active'));
+    screens[name].classList.add('active');
+  }
+
+  function setFriendError(msg) {
+    $('friend-error').textContent = msg || '';
+  }
+
+  function randomCode() {
+    const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
+    let s = '';
+    for (let i = 0; i < 6; i++) s += chars[Math.floor(Math.random() * chars.length)];
+    return s;
+  }
+
+  function destroyPeer() {
+    if (conn) { try { conn.close(); } catch (_) {} conn = null; }
+    if (peer) { try { peer.destroy(); } catch (_) {} peer = null; }
+  }
+
+  function resetScores() {
+    clicks = { 1: 0, 2: 0 };
+    updateUI();
+  }
+
+  function getDiff() { return clicks[1] - clicks[2]; }
+
+  function getWinner() {
+    const d = getDiff();
+    if (d >= WIN) return 1;
+    if (d <= -WIN) return 2;
+    return null;
+  }
+
+  function clicksToWinForMe() {
+    const d = getDiff();
+    if (myPlayer === 1) return Math.max(0, WIN - d);
+    return Math.max(0, WIN + d);
+  }
+
+  function updateUI() {
+    $('score-p1').textContent = clicks[1];
+    $('score-p2').textContent = clicks[2];
+    $('clicks-to-win').textContent = clicksToWinForMe();
+    const pct = 50 - (getDiff() / WIN) * 50;
+    const c = Math.max(5, Math.min(95, pct));
+    $('rope-bar').style.width = c + '%';
+    $('rope-marker').style.left = c + '%';
+    const t = Math.max(-1, Math.min(1, getDiff() / WIN));
+    $('tug-scene').style.transform = 'translateX(' + (-t * ROPE_PX) + 'px)';
+    return getWinner();
+  }
+
+  function pulse() {
+    const tap = $('tap-zone');
+    tap.classList.remove('punch');
+    void tap.offsetWidth;
+    tap.classList.add('punch');
+    $('arena').classList.add('shake');
+    setTimeout(() => $('arena').classList.remove('shake'), 120);
+  }
+
+  function stopCpu() {
+    if (cpuTimer) { clearTimeout(cpuTimer); cpuTimer = null; }
+  }
+
+  function scheduleCpu() {
+    if (!playing || mode !== 'solo') return;
+    cpuTimer = setTimeout(() => {
+      if (!playing) return;
+      clicks[2]++;
+      const w = updateUI();
+      if (w === 2) endGame(2);
+      else scheduleCpu();
+    }, (400 + Math.random() * 200) * 0.7);
+  }
+
+  function send(data) {
+    if (conn && conn.open) conn.send(data);
+  }
+
+  function broadcastState() {
+    send({ t: 'state', clicks: { ...clicks } });
+  }
+
+  function applyState(c) {
+    clicks[1] = c[1] || 0;
+    clicks[2] = c[2] || 0;
+    const w = updateUI();
+    if (w) endGame(w);
+  }
+
+  function runCountdown(cb) {
+    const ov = $('overlay-countdown');
+    const txt = $('countdown-text');
+    ov.classList.remove('hidden');
+    let n = 3;
+    txt.textContent = n;
+    const step = () => {
+      n--;
+      if (n > 0) {
+        txt.textContent = n;
+        setTimeout(step, 650);
+      } else if (n === 0) {
+        txt.textContent = 'Старт!';
+        setTimeout(() => {
+          ov.classList.add('hidden');
+          cb();
+        }, 450);
+      }
+    };
+    setTimeout(step, 650);
+  }
+
+  function startGamePlay() {
+    show('game');
+    $('overlay-result').classList.add('hidden');
+    resetScores();
+    playing = false;
+    $('tap-zone').disabled = true;
+
+    if (mode === 'solo') {
+      $('label-p1').textContent = 'Ты · синий';
+      $('label-p2').textContent = 'CPU · красный';
+      myPlayer = 1;
+    } else if (role === 'host') {
+      $('label-p1').textContent = 'Ты · синий';
+      $('label-p2').textContent = 'Друг · красный';
+      myPlayer = 1;
+    } else {
+      $('label-p1').textContent = 'Друг · синий';
+      $('label-p2').textContent = 'Ты · красный';
+      myPlayer = 2;
+    }
+
+    runCountdown(() => {
+      playing = true;
+      $('tap-zone').disabled = false;
+      $('hud-status').textContent = 'Кликай!';
+      if (mode === 'solo') scheduleCpu();
+      if (role === 'host') send({ t: 'start' });
+    });
+  }
+
+  function onTap() {
+    if (!playing) return;
+    pulse();
+
+    if (mode === 'solo') {
+      clicks[1]++;
+      const w = updateUI();
+      if (w === 1) endGame(1);
+      return;
+    }
+
+    if (role === 'host') {
+      clicks[myPlayer]++;
+      const w = updateUI();
+      broadcastState();
+      if (w) {
+        send({ t: 'over', winner: w });
+        endGame(w);
+      }
+    } else {
+      send({ t: 'click' });
+    }
+  }
+
+  function fireConfetti() {
+    if (typeof confetti !== 'function') return;
+    confetti({ particleCount: 100, spread: 70, origin: { y: 0.65 } });
+  }
+
+  function endGame(winner) {
+    playing = false;
+    stopCpu();
+    $('tap-zone').disabled = true;
+    const won = winner === myPlayer;
+    $('result-title').textContent = won ? 'Победа!' : 'Поражение';
+    $('result-title').className = 'text-2xl font-black ' + (won ? 'text-blue-600' : 'text-red-600');
+    $('result-text').textContent =
+      'Счёт ' + clicks[1] + ' : ' + clicks[2] + '. ' +
+      (won ? 'Отличная работа!' : 'В следующий раз получится!');
+    $('overlay-result').classList.remove('hidden');
+    if (won) fireConfetti();
+  }
+
+  function setupConnection(c) {
+    conn = c;
+    conn.on('data', (data) => {
+      if (role !== 'host') {
+        if (data.t === 'start') {
+          $('overlay-countdown').classList.add('hidden');
+          resetScores();
+          playing = true;
+          $('tap-zone').disabled = false;
+          $('hud-status').textContent = 'Кликай!';
+        }
+        if (data.t === 'state') applyState(data.clicks);
+        if (data.t === 'over') {
+          if (data.clicks) applyState(data.clicks);
+          endGame(data.winner);
+        }
+        return;
+      }
+      if (data.t === 'click') {
+        clicks[2]++;
+        const w = updateUI();
+        broadcastState();
+        if (w) {
+          send({ t: 'over', winner: w, clicks: { ...clicks } });
+          endGame(w);
+        }
+      }
+    });
+    conn.on('close', () => {
+      if (playing) $('hud-status').textContent = 'Соперник отключился';
+    });
+  }
+
+  function createRoom() {
+    setFriendError('');
+    destroyPeer();
+    roomCode = randomCode();
+    mode = 'online';
+    role = 'host';
+    myPlayer = 1;
+
+    peer = new Peer(roomCode, {
+      debug: 1,
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:global.stun.twilio.com:3478' },
+        ],
+      },
+    });
+
+    peer.on('open', () => {
+      $('room-code').textContent = roomCode.toUpperCase();
+      $('lobby-status').textContent = 'Ожидание второго игрока…';
+      show('lobby');
+    });
+
+    peer.on('connection', (c) => {
+      c.on('open', () => {
+        setupConnection(c);
+        $('lobby-status').textContent = 'Игрок подключился! Запуск…';
+        setTimeout(() => startGamePlay(), 400);
+      });
+    });
+
+    peer.on('error', (err) => {
+      if (err.type === 'unavailable-id') {
+        createRoom();
+        return;
+      }
+      setFriendError('Ошибка сети: ' + (err.message || err.type));
+      destroyPeer();
+      show('friend');
+    });
+  }
+
+  function joinRoom() {
+    setFriendError('');
+    const code = ($('join-code').value || '').trim().toLowerCase();
+    if (code.length < 4) {
+      setFriendError('Введите код комнаты');
+      return;
+    }
+    destroyPeer();
+    mode = 'online';
+    role = 'guest';
+    myPlayer = 2;
+    roomCode = code;
+
+    peer = new Peer({
+      debug: 1,
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:global.stun.twilio.com:3478' },
+        ],
+      },
+    });
+
+    peer.on('open', () => {
+      const c = peer.connect(code, { reliable: true });
+      setupConnection(c);
+      c.on('open', () => {
+        $('hud-status').textContent = 'Подключено. Ждём старт…';
+        show('game');
+        $('tap-zone').disabled = true;
+      });
+      c.on('error', () => setFriendError('Не удалось подключиться. Проверьте код.'));
+    });
+
+    peer.on('error', (err) => {
+      setFriendError('Ошибка: ' + (err.message || err.type));
+      destroyPeer();
+      show('friend');
+    });
+  }
+
+  function quitAll() {
+    playing = false;
+    stopCpu();
+    destroyPeer();
+    mode = null;
+    $('overlay-countdown').classList.add('hidden');
+    $('overlay-result').classList.add('hidden');
+    show('menu');
+  }
+
+  $('btn-solo').onclick = () => {
+    mode = 'solo';
+    role = 'solo';
+    myPlayer = 1;
+    startGamePlay();
+  };
+
+  $('btn-friend').onclick = () => {
+    setFriendError('');
+    show('friend');
+  };
+
+  $('btn-friend-back').onclick = () => show('menu');
+  $('btn-create-room').onclick = createRoom;
+  $('btn-join-room').onclick = joinRoom;
+
+  $('btn-lobby-cancel').onclick = () => {
+    destroyPeer();
+    show('friend');
+  };
+
+  $('tap-zone').onclick = onTap;
+  $('tap-zone').addEventListener('touchstart', (e) => { e.preventDefault(); onTap(); }, { passive: false });
+
+  $('btn-quit').onclick = quitAll;
+  $('btn-again').onclick = () => {
+    if (mode === 'solo') {
+      startGamePlay();
+    } else {
+      quitAll();
+    }
+  };
+
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' || e.code === 'Enter') {
+      if ($('overlay-result').classList.contains('hidden') === false) return;
+      if (screens.game.classList.contains('active') && playing) {
+        e.preventDefault();
+        onTap();
+      }
+    }
+  });
+
+  updateUI();
+})();
+</script>
+</body>
+</html>
